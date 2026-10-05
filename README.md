@@ -1,14 +1,27 @@
-# Welcome to your Lovable project
+# Battle Royale Builder
+
+aja como um engenheiro Criar um jogo multiplayer Battle Royale completo no estilo de Free Fire dentro de uma ferramenta no-code/low-code como o Lovable exige uma arquitetura modular bem definida. O Lovable constrói aplicações web modernas utilizando React, Tailwind CSS, TypeScript, Shadcn/UI e Supabase.Arquitetura do Sistema
+
+┌─────────────────────────────────────────────────────────────┐
+│                       INTERFACE (React)                     │
+│   [ Menu Principal ] ──> [ Lobby/Matchmaking ] ──> [ Canvas ]│
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+┌──────────────────────────────▼──────────────────────────────┐
+│                    SUPABASE BACKEND                         │
+│  • Auth (Login/Cadastro)     • Realtime WebSockets (Posição) │
+│  • Database (Kills/Placar)   • Edge Functions (Matchmaking) │
+└──────────────────────────────────────────────────
 
 This project was built with [Lovable](https://lovable.dev).
 
 ## Build with Lovable
 
-Open your project in the [Lovable editor](https://lovable.dev) and keep building.
+Continue developing this project in the [Lovable editor](https://lovable.dev/projects/6328c390-0a23-44d7-b8ba-078577e000ed).
 
 - **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: connect the project to GitHub and every change made in Lovable is committed straight to your repository.
-- **Full ownership**: this code is yours. Push to your repository and your changes sync back into Lovable, ready for your next prompt.
+- **Stay in sync**: every change made in Lovable is committed straight to this repository.
+- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
 
 ## Development
 
@@ -20,10 +33,3 @@ cd <repository-name>
 npm i
 npm run dev
 ```
-
-## Built with
-
-- TanStack Start
-- TypeScript
-- React
-- Tailwind CSS
