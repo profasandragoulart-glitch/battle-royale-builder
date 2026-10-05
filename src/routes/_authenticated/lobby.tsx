@@ -39,7 +39,7 @@ function Lobby() {
     chRef.current = ch;
     ch.on("presence", { event: "sync" }, () => {
       const st = ch.presenceState<Member>();
-      const list = Object.values(st).map((a) => a[0]).sort((a, b) => a.joinedAt - b.joinedAt);
+      const list = Object.values(st).map((a) => a[0]).filter((m): m is NonNullable<typeof m> => !!m).sort((a, b) => a.joinedAt - b.joinedAt);
       setMembers(list);
     })
       .on("broadcast", { event: "start" }, ({ payload }) => {
@@ -77,7 +77,7 @@ function Lobby() {
     const n = name.trim().slice(0, 20);
     if (!n) return;
     const { error } = await supabase.from("profiles").update({ username: n }).eq("id", user.id);
-    if (error) return toast.error("Não foi possível salvar");
+    if (error) { toast.error("Não foi possível salvar"); return; }
     toast.success("Apelido salvo");
     qc.invalidateQueries({ queryKey: ["profile", user.id] });
   }

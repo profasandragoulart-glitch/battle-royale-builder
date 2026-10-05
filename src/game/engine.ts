@@ -87,18 +87,18 @@ const ZONE: [number, number][] = [
 ];
 
 function zoneRadius(t: number) {
-  if (t <= 0) return ZONE[0][1];
+  if (t <= 0) return ZONE[0]![1];
   for (let i = 1; i < ZONE.length; i++) {
-    const [t1, r1] = ZONE[i];
-    const [t0, r0] = ZONE[i - 1];
+    const [t1, r1] = ZONE[i]!;
+    const [t0, r0] = ZONE[i - 1]!;
     if (t <= t1) return r0 + ((r1 - r0) * (t - t0)) / (t1 - t0);
   }
-  return ZONE[ZONE.length - 1][1];
+  return ZONE[ZONE.length - 1]![1];
 }
 function zoneText(t: number) {
   for (let i = 1; i < ZONE.length; i++) {
-    const [t1, r1] = ZONE[i];
-    const r0 = ZONE[i - 1][1];
+    const [t1, r1] = ZONE[i]!;
+    const r0 = ZONE[i - 1]![1];
     if (t < t1) {
       const s = Math.ceil(t1 - t);
       return r1 < r0 ? `Zona fechando · ${s}s` : `Zona fecha em ${s}s`;
@@ -110,6 +110,25 @@ function zoneText(t: number) {
 function cssVar(name: string, fallback: string) {
   const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   return v || fallback;
+}
+
+function readColors() {
+  return {
+      grass: cssVar("--game-grass", "#2d4a2b"),
+      grid: cssVar("--game-grid", "#355534"),
+      crate: cssVar("--game-crate", "#8a5a2b"),
+      crateEdge: cssVar("--game-crate-edge", "#5a3a1b"),
+      tree: cssVar("--game-tree", "#1d3a1f"),
+      me: cssVar("--game-me", "#ff9a1f"),
+      enemy: cssVar("--game-enemy", "#e5484d"),
+      bot: cssVar("--game-bot", "#9aa3ad"),
+      bullet: cssVar("--game-bullet", "#ffe08a"),
+      zone: cssVar("--game-zone", "rgba(40,120,255,0.35)"),
+      zoneEdge: cssVar("--game-zone-edge", "#4aa3ff"),
+      text: cssVar("--game-text", "#ffffff"),
+      hpBg: cssVar("--game-hp-bg", "#222"),
+      hp: cssVar("--game-hp", "#4ade80"),
+    };
 }
 
 export class Game {
@@ -129,7 +148,7 @@ export class Game {
   private ended = false;
   private placement = 0;
   private won = false;
-  private colors: Record<string, string>;
+  private colors!: ReturnType<typeof readColors>;
   private isHost: boolean;
   private cleanup: (() => void)[] = [];
 
@@ -170,22 +189,7 @@ export class Game {
       this.players.set(r.id, p);
     });
 
-    this.colors = {
-      grass: cssVar("--game-grass", "#2d4a2b"),
-      grid: cssVar("--game-grid", "#355534"),
-      crate: cssVar("--game-crate", "#8a5a2b"),
-      crateEdge: cssVar("--game-crate-edge", "#5a3a1b"),
-      tree: cssVar("--game-tree", "#1d3a1f"),
-      me: cssVar("--game-me", "#ff9a1f"),
-      enemy: cssVar("--game-enemy", "#e5484d"),
-      bot: cssVar("--game-bot", "#9aa3ad"),
-      bullet: cssVar("--game-bullet", "#ffe08a"),
-      zone: cssVar("--game-zone", "rgba(40,120,255,0.35)"),
-      zoneEdge: cssVar("--game-zone-edge", "#4aa3ff"),
-      text: cssVar("--game-text", "#ffffff"),
-      hpBg: cssVar("--game-hp-bg", "#222"),
-      hp: cssVar("--game-hp", "#4ade80"),
-    };
+    this.colors = readColors();
 
     this.bindInput();
     this.resize();
