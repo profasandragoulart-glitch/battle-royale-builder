@@ -17,18 +17,25 @@ const eventDefs=[
 {id:'finance2',icon:'💰',region:'centro',title:'Consequência: auditoria emergencial',text:'O corte financeiro deixou contratos vulneráveis. Uma auditoria rápida pode evitar desperdícios.',chain:null,choices:[['Auditar contratos críticos',{recursos:9,tempo:-6,reputação:6},'Você recuperou recursos sem cortar o atendimento.'],['Negociar prazos',{recursos:4,reputação:3,tempo:-5},'O caixa ganhou fôlego e a pressão diminuiu.'],['Suspender contratos',{recursos:12,reputação:-8,tempo:-4},'O caixa melhora, mas serviços começam a sentir a suspensão.']]}
 ];
 
-const npcSeed=[
-{id:'lia',name:'Lia · Resgate',icon:'🧑‍🚒',x:2,y:6,goal:'sul',mood:76},
-{id:'caio',name:'Caio · Energia',icon:'🧑‍🔧',x:2,y:7,goal:'oeste',mood:68},
-{id:'bia',name:'Bia · Saúde',icon:'👩‍⚕️',x:2,y:2,goal:'norte',mood:82},
-{id:'rafa',name:'Rafa · Logística',icon:'🧑‍💼',x:8,y:2,goal:'leste',mood:71}
+const npcSeed=[{id:'lia',name:'Lia · Resgate',icon:'🧑‍🚒',x:2,y:6,goal:'sul',mood:76},{id:'caio',name:'Caio · Energia',icon:'🧑‍🔧',x:2,y:7,goal:'oeste',mood:68},{id:'bia',name:'Bia · Saúde',icon:'👩‍⚕️',x:2,y:2,goal:'norte',mood:82},{id:'rafa',name:'Rafa · Logística',icon:'🧑‍💼',x:8,y:2,goal:'leste',mood:71}];
+
+const shopItems=[
+{id:'kit',icon:'🧰',name:'Kit de Emergência',price:120,desc:'Uso único no início da próxima operação: +8 Recursos.',type:'consumable'},
+{id:'scanner',icon:'📡',name:'Scanner Avançado',price:160,desc:'Uso único: a primeira varredura da próxima operação não consome Tempo.',type:'consumable'},
+{id:'badge',icon:'🏅',name:'Distintivo da Guilda',price:220,desc:'Distintivo cosmético permanente no perfil.',type:'cosmetic'},
+{id:'drone',icon:'🤖',name:'Drone de Reconhecimento',price:300,desc:'Cosmético permanente para sua identidade de jogador.',type:'cosmetic'}
 ];
 
-let S={screen:'start',scenario:null,turn:0,xp:0,coins:0,score:0,res:{energia:70,segurança:70,recursos:70,reputação:70,tempo:70},log:[],event:null,pending:null,npcs:[],player:{x:5,y:4},selected:null};
-
-const app=document.querySelector('#app'),badge=document.querySelector('#scoreBadge');
 const labels={energia:'Energia',segurança:'Segurança',recursos:'Recursos',reputação:'Reputação',tempo:'Tempo'};
+let authMode='login',db=loadDB(),currentEmail=localStorage.getItem('zonaZeroSession')||null;
+let S={screen:'auth',scenario:null,turn:0,xp:0,coins:0,score:0,res:{energia:70,segurança:70,recursos:70,reputação:70,tempo:70},log:[],event:null,pending:null,npcs:[],player:{x:5,y:4},selected:null,scannerReady:false};
+const app=document.querySelector('#app'),badge=document.querySelector('#scoreBadge'),playerMini=document.querySelector('#playerMini');
 
+function loadDB(){try{return JSON.parse(localStorage.getItem('zonaZeroPlayers')||'{}')}catch(e){return {}}}
+function saveDB(){localStorage.setItem('zonaZeroPlayers',JSON.stringify(db))}
+function savePlayer(){if(!currentEmail||!db[currentEmail])return;const p=db[currentEmail];p.xp=S.xp;p.coins=S.coins;p.score=S.score;p.lastScore=p.lastScore||0;p.played=p.played||0;p.wins=p.wins||0;p.inventory=p.inventory||[];saveDB()}
+async function passwordHash(password){const data=new TextEncoder().encode(password);const hash=await crypto.subtle.digest('SHA-256',data);return Array.from(new Uint8Array(hash)).map(b=>b.toString(16).padStart(2,'0')).join('')}
+function player(){return currentEmail?db[currentEmail]:null}
 function clamp(v){return Math.max(0,Math.min(100,v))}
 function stats(){return '<div class="stats">'+Object.entries(S.res).map(([k,v])=>'<div class="meter"><span class="small">'+labels[k]+'</span><b>'+Math.round(v)+'</b><div class="bar"><div class="fill" style="width:'+v+'%"></div></div></div>').join('')+'</div>'}
 function regionAt(x,y){return regions.find(r=>x>=r.x&&x<r.x+r.w&&y>=r.y&&y<r.y+r.h)}
@@ -36,93 +43,81 @@ function tileType(x,y){if((x===4||x===5||x===6)&&y>=0&&y<8)return'road';if((x===
 function regionLabels(){return regions.map(r=>'<span class="regionLabel" style="left:'+((r.x/10)*100+1)+'%;top:'+((r.y/8)*100+5)+'%">'+r.name+'</span>').join('')}
 function npcPosition(n){return 'left:'+((n.x+.5)/10*100)+'%;top:'+((n.y+.5)/8*100)+'%'}
 function map(){
-  let t='';
-  for(let y=0;y<8;y++)for(let x=0;x<10;x++){
-    const type=tileType(x,y),sel=S.selected&&S.selected.x===x&&S.selected.y===y;
-    t+='<button class="tile '+type+(sel?' selected':'')+'" onclick="selectTile('+x+','+y+')" title="Setor '+(regionAt(x,y)?.name||'urbano')+'">'+(x===S.player.x&&y===S.player.y?'<span class="pin">VOCÊ</span>':'')+'</button>';
-  }
-  const npcs=S.npcs.map(n=>'<div class="npc '+(n.mood<45?'distressed':'')+'" style="'+npcPosition(n)+'" title="'+n.name+' · humor '+n.mood+'">'+n.icon+'</div>').join('');
-  return '<div class="mapWrap"><div class="map">'+t+'<span class="zoneLabel">MAPA 10×8 · TURNO '+S.turn+'</span>'+regionLabels()+'<div class="unit" style="'+npcPosition(S.player)+'">●</div>'+npcs+'<button class="incident" style="'+npcPosition({x:S.event?eventRegionX():5,y:S.event?eventRegionY():4})+'" onclick="openEvent()">!</button></div><div class="legend"><span><i class="dot"></i> sua equipe</span><span>🔵 NPC ativo</span><span>🔴 incidente</span><span>clique em um setor para mover</span></div></div>'
+ let t='';for(let y=0;y<8;y++)for(let x=0;x<10;x++){const type=tileType(x,y),sel=S.selected&&S.selected.x===x&&S.selected.y===y;t+='<button class="tile '+type+(sel?' selected':'')+'" onclick="selectTile('+x+','+y+')" title="Setor '+(regionAt(x,y)?.name||'urbano')+'">'+(x===S.player.x&&y===S.player.y?'<span class="pin">VOCÊ</span>':'')+'</button>'}
+ const npcs=S.npcs.map(n=>'<div class="npc '+(n.mood<45?'distressed':'')+'" style="'+npcPosition(n)+'" title="'+n.name+' · humor '+n.mood+'">'+n.icon+'</div>').join('');
+ return '<div class="mapWrap"><div class="map">'+t+'<span class="zoneLabel">MAPA 10×8 · TURNO '+S.turn+'</span>'+regionLabels()+'<div class="unit" style="'+npcPosition(S.player)+'">●</div>'+npcs+'<button class="incident" style="'+npcPosition({x:S.event?eventRegionX():5,y:S.event?eventRegionY():4})+'" onclick="openEvent()">!</button></div><div class="legend"><span><i class="dot"></i> sua equipe</span><span>🔵 NPC ativo</span><span>🔴 incidente</span><span>clique em um setor para mover</span></div></div>'
 }
 function eventRegionX(){const r=regions.find(x=>x.id===S.event.region);return r?Math.min(9,r.x+1):5}
 function eventRegionY(){const r=regions.find(x=>x.id===S.event.region);return r?Math.min(7,r.y+1):4}
 
-function render(){badge.textContent='XP '+S.xp+' · Moedas '+S.coins;if(S.screen==='start')startScreen();else if(S.screen==='end')endScreen();else playScreen()}
-function startScreen(){
-  app.innerHTML='<div class="panel start"><span class="tag">SIMULAÇÃO EMERGENTE V3</span><h2>Entre na cidade e assuma o comando</h2><p>Agora a arena tem memória: NPCs mudam de posição e humor, eventos geram consequências futuras e regiões dependem umas das outras.</p><div class="scenarioGrid">'+scenarios.map(s=>'<button class="scenario" onclick="chooseScenario(\''+s.id+'\')"><b>'+s.icon+' '+s.name+'</b><div class="small">'+s.desc+'</div></button>').join('')+'</div><button class="btn primary" onclick="start()">▶ Iniciar mundo vivo</button></div>'
+function render(){const p=player();badge.textContent=p?'XP '+p.xp+' · 🪙 '+p.coins:'XP 0 · 🪙 0';playerMini.innerHTML=p?'👤 '+p.name+' · <button class="btn" style="padding:5px 9px;margin-left:4px" onclick="logout()">sair</button>':'';if(S.screen==='auth')authScreen();else if(S.screen==='lobby')lobbyScreen();else if(S.screen==='shop')shopScreen();else if(S.screen==='end')endScreen();else playScreen()}
+
+function authScreen(){
+ app.innerHTML='<div class="panel start authCard"><span class="tag">CONTA DE JOGADOR</span><h2>'+ (authMode==='login'?'Entrar na Arena':'Criar conta') +'</h2><p>Seu perfil guarda XP, moedas, pontuação acumulada e inventário neste navegador.</p><div class="authTabs"><button class="tab '+(authMode==='login'?'active':'')+'" onclick="setAuthMode(\'login\')">Entrar</button><button class="tab '+(authMode==='register'?'active':'')+'" onclick="setAuthMode(\'register\')">Criar conta</button></div><div class="form"><div><label>Nome do jogador</label><input id="authName" placeholder="Ex.: Sandra" autocomplete="nickname"></div><div><label>E-mail</label><input id="authEmail" type="email" placeholder="jogador@exemplo.com" autocomplete="email"></div><div><label>Senha</label><input id="authPass" type="password" placeholder="mínimo 6 caracteres" autocomplete="'+(authMode==='login'?'current-password':'new-password')+'"></div><div id="authError" class="error"></div><button class="btn primary" onclick="submitAuth()">'+(authMode==='login'?'🚪 Entrar na Arena':'✨ Criar minha conta')+'</button></div><div class="notice">Protótipo local: os dados ficam neste navegador. Para lançamento real, conectaremos o login a um banco/autenticação seguro.</div></div>'
 }
+function setAuthMode(mode){authMode=mode;render()}
+async function submitAuth(){
+ const name=(document.querySelector('#authName')?.value||'').trim(),email=(document.querySelector('#authEmail')?.value||'').trim().toLowerCase(),pass=document.querySelector('#authPass')?.value||'',err=document.querySelector('#authError');
+ if(!email||!pass||(authMode==='register'&&!name)){err.textContent='Preencha os campos obrigatórios.';return}
+ if(pass.length<6){err.textContent='A senha precisa ter pelo menos 6 caracteres.';return}
+ const hash=await passwordHash(pass);
+ if(authMode==='register'){
+   if(db[email]){err.textContent='Esta conta já existe. Entre para continuar.';return}
+   db[email]={id:'p_'+Date.now(),name,xp:0,coins:150,score:0,lastScore:0,played:0,wins:0,inventory:[],createdAt:new Date().toISOString(),passwordHash:hash};
+ }else{
+   if(!db[email]||db[email].passwordHash!==hash){err.textContent='E-mail ou senha incorretos.';return}
+ }
+ currentEmail=email;localStorage.setItem('zonaZeroSession',email);saveDB();S.xp=db[email].xp;S.coins=db[email].coins;S.score=db[email].score;S.screen='lobby';render()
+}
+function logout(){savePlayer();currentEmail=null;localStorage.removeItem('zonaZeroSession');S.screen='auth';render()}
+function leaderboard(){
+ const rows=Object.values(db).sort((a,b)=>(b.score||0)-(a.score||0)).slice(0,8);
+ return '<div class="leaderboard"><h3>🏆 Ranking da Arena</h3>'+(rows.length?rows.map((p,i)=>'<div class="rankRow '+(p===player()?'rankMe':'')+'"><span>#'+(i+1)+' · <b>'+p.name+'</b><br><span class="small">'+(p.wins||0)+' vitórias · '+(p.played||0)+' partidas</span></span><b>'+((p.score||0).toLocaleString('pt-BR'))+' pts</b></div>').join(''):'<div class="small">Seja o primeiro a pontuar.</div>')+'</div>'
+}
+function lobbyScreen(){
+ const p=player();
+ app.innerHTML='<div class="panel"><span class="tag">CENTRAL DO JOGADOR</span><h2>Olá, '+p.name+' 👋</h2><p>Agora cada partida alimenta uma carreira persistente. Pontos de decisão viram XP e moedas; a loja desbloqueia itens sem apagar sua evolução.</p><div class="wallet"><span>⭐ XP <b>'+p.xp+'</b></span><span>🪙 Moedas <b>'+p.coins+'</b></span><span>🎯 Pontos acumulados <b>'+p.score+'</b></span><span>🏁 '+(p.wins||0)+' vitórias</span></div><div class="profileGrid"><div class="worldCard"><h3>🎮 Próxima missão</h3><p>Escolha um cenário e entre na Arena Viva. Você recebe recompensas ao finalizar a operação.</p><div class="scenarioGrid">'+scenarios.map(s=>'<button class="scenario" onclick="chooseScenario(\''+s.id+'\')"><b>'+s.icon+' '+s.name+'</b><div class="small">'+s.desc+'</div></button>').join('')+'</div><div class="actions"><button class="btn primary" onclick="start()">▶ Iniciar mundo vivo</button><button class="btn" onclick="S.screen=\'shop\';render()">🛒 Abrir Loja</button></div></div><div class="worldCard"><h3>👤 Seu inventário</h3><div class="inventory">'+((p.inventory||[]).length?p.inventory.map(id=>{const it=shopItems.find(x=>x.id===id);return '<span class="chip">'+it.icon+' '+it.name+'</span>'}).join(''):'<span class="small">Nenhum item ainda. Jogue para ganhar moedas.</span>')+'</div>'+leaderboard()+'</div></div></div>'
+}
+function shopScreen(){
+ const p=player();
+  const cards=shopItems.map(it=>{const owned=(p.inventory||[]).includes(it.id),canBuy=!owned&&p.coins>=it.price;return `<div class="shopCard"><div class="shopIcon">${it.icon}</div><h3>${it.name}</h3><p class="small">${it.desc}</p><div class="price">🪙 ${it.price}</div><div class="${owned?'owned':'small'}">${owned?'✓ Já adquirido':'Disponível para compra'}</div><button class="btn ${owned?'':'primary'}" ${!canBuy?'disabled':''} onclick="buy('${it.id}')">${owned?'Adquirido':canBuy?'Comprar':'Moedas insuficientes'}</button></div>`}).join('');
+  app.innerHTML=`<div class="panel"><span class="tag">MERCADO DA GUILDA</span><h2>🛒 Loja da Arena</h2><p>Use suas moedas conquistadas em partidas para personalizar e ampliar sua preparação. Nada é comprado com dinheiro real nesta versão.</p><div class="wallet"><span>🪙 Saldo: <b>${p.coins}</b></span><span>⭐ XP: <b>${p.xp}</b></span></div><div class="shopGrid">${cards}</div><div class="actions"><button class="btn" onclick="S.screen='lobby';render()">← Voltar à central</button></div><div class="notice">Economia protegida: os itens de preparação são limitados e a progressão principal continua vindo da habilidade do jogador.</div></div>`
+}
+function buy(id){
+ const p=player(),it=shopItems.find(x=>x.id===id);if(!p||!it||p.inventory.includes(id)||p.coins<it.price)return;
+ p.coins-=it.price;p.inventory.push(id);S.coins=p.coins;saveDB();log('🛒 Você comprou '+it.name+'.');render()
+}
+
 function chooseScenario(id){S.scenario=scenarios.find(x=>x.id===id);start()}
 function start(){
-  S.screen='play';if(!S.scenario)S.scenario=scenarios[Math.floor(Math.random()*scenarios.length)];
-  S.turn=1;S.score=0;S.log=[];S.pending=null;S.selected=null;S.player={x:5,y:4};
-  S.res={energia:70,segurança:70,recursos:70,reputação:70,tempo:70};
-  S.npcs=npcSeed.map(n=>({...n}));S.event=pickEvent();log('🌍 Mundo iniciado: '+S.scenario.name+'.');
-  render()
+ const p=player();if(!p){S.screen='auth';render();return}
+ S.screen='play';if(!S.scenario)S.scenario=scenarios[Math.floor(Math.random()*scenarios.length)];
+ S.turn=1;S.score=0;S.log=[];S.pending=null;S.selected=null;S.player={x:5,y:4};S.res={energia:70,segurança:70,recursos:70,reputação:70,tempo:70};
+ S.npcs=npcSeed.map(n=>({...n}));S.scannerReady=p.inventory.includes('scanner');if(p.inventory.includes('kit')){S.res.recursos=clamp(S.res.recursos+8);p.inventory=p.inventory.filter(x=>x!=='kit');log('🧰 Kit de Emergência consumido: Recursos +8.')}
+ S.event=pickEvent();log('🌍 Mundo iniciado: '+S.scenario.name+'. Boa sorte, '+p.name+'!');render()
 }
-function pickEvent(){
-  if(S.pending&&S.pending.turn<=S.turn){const e=eventDefs.find(x=>x.id===S.pending.id);S.pending=null;return e}
-  const available=eventDefs.filter(e=>!['hospital','security','rescue','supply','people2','finance2'].includes(e.id));
-  return available[(S.turn-1)%available.length]
-}
+function pickEvent(){if(S.pending&&S.pending.turn<=S.turn){const e=eventDefs.find(x=>x.id===S.pending.id);S.pending=null;return e}const available=eventDefs.filter(e=>!['hospital','security','rescue','supply','people2','finance2'].includes(e.id));return available[(S.turn-1)%available.length]}
 function log(msg){S.log.push(msg)}
-function applyImpact(impact){
-  Object.entries(impact).forEach(([k,v])=>{if(S.res[k]!==undefined)S.res[k]=clamp(S.res[k]+v)})
-}
-function moveNPCs(){
-  S.npcs.forEach(n=>{
-    const goal=regions.find(r=>r.id===n.goal);if(!goal)return;
-    const tx=goal.x+Math.floor(goal.w/2),ty=goal.y+Math.floor(goal.h/2);
-    if(Math.abs(tx-n.x)>Math.abs(ty-n.y))n.x+=Math.sign(tx-n.x);else if(ty!==n.y)n.y+=Math.sign(ty-n.y);
-    if(Math.random()<0.3)n.mood=clamp(n.mood+(S.res.reputação>55?2:-3));
-    if(n.mood<40)log('⚠️ '+n.name+' está sob pressão em '+(regionAt(n.x,n.y)?.name||'setor urbano')+'.');
-  })
-}
-function maybeChain(e,i){
-  if(!e.chain)return;
-  const choice=e.choices[i][0];
-  const map={hospital:'hospital',security:'security',rescue:'rescue',supply:'supply',people:'people2',finance:'finance2'};
-  if(i===0&&map[e.chain]){S.pending={id:map[e.chain],turn:S.turn+2};log('🔗 Consequência agendada: '+eventDefs.find(x=>x.id===map[e.chain]).title+' no turno '+(S.turn+2)+'.')}
-  if(i===2)log('🌪️ Sua decisão piorou a pressão em '+e.region+'. Um novo risco pode surgir antes do esperado.');
-}
-function decide(i){
-  const e=S.event;if(!e)return;
-  const c=e.choices[i],impact=c[1];applyImpact(impact);
-  S.score+=i===0?180:i===1?90:10;S.res.tempo=clamp(S.res.tempo-2);
-  log(e.icon+' '+e.title+': '+c[0]+' — '+c[2]);maybeChain(e,i);
-  S.turn++;moveNPCs();
-  if(S.res.reputação<18||S.res.tempo<8||S.res.recursos<8)return finish('A cidade entrou em colapso operacional.');
-  if(S.turn>=10)return finish('Você atravessou o ciclo crítico e estabilizou a cidade.');
-  S.event=pickEvent();render()
-}
-function selectTile(x,y){
-  S.selected={x,y};
-  if(Math.abs(x-S.player.x)+Math.abs(y-S.player.y)<=2){moveTo(x,y)}
-  else{log('🗺️ Setor selecionado: '+(regionAt(x,y)?.name||'zona urbana')+'. Mova-se por etapas para chegar até lá.');render()}
-}
-function moveTo(x,y){
-  const dx=Math.sign(x-S.player.x),dy=Math.sign(y-S.player.y);
-  S.player.x+=dx;S.player.y+=dy;S.res.tempo=clamp(S.res.tempo-2);
-  const r=regionAt(S.player.x,S.player.y);log('🚙 Equipe avançou para '+(r?.name||'zona urbana')+'. Tempo -2.');
-  moveNPCs();S.turn++;
-  if(S.turn>=10)finish('A operação terminou com a cidade estabilizada.');else{S.event=pickEvent();render()}
-}
+function applyImpact(impact){Object.entries(impact).forEach(([k,v])=>{if(S.res[k]!==undefined)S.res[k]=clamp(S.res[k]+v)})}
+function moveNPCs(){S.npcs.forEach(n=>{const goal=regions.find(r=>r.id===n.goal);if(!goal)return;const tx=goal.x+Math.floor(goal.w/2),ty=goal.y+Math.floor(goal.h/2);if(Math.abs(tx-n.x)>Math.abs(ty-n.y))n.x+=Math.sign(tx-n.x);else if(ty!==n.y)n.y+=Math.sign(ty-n.y);if(Math.random()<0.3)n.mood=clamp(n.mood+(S.res.reputação>55?2:-3));if(n.mood<40)log('⚠️ '+n.name+' está sob pressão em '+(regionAt(n.x,n.y)?.name||'setor urbano')+'.')})}
+function maybeChain(e,i){if(!e.chain)return;const map={hospital:'hospital',security:'security',rescue:'rescue',supply:'supply',people:'people2',finance:'finance2'};if(i===0&&map[e.chain]){S.pending={id:map[e.chain],turn:S.turn+2};log('🔗 Consequência agendada: '+eventDefs.find(x=>x.id===map[e.chain]).title+' no turno '+(S.turn+2)+'.')}if(i===2)log('🌪️ Sua decisão piorou a pressão em '+e.region+'. Um novo risco pode surgir antes do esperado.')}
+function decide(i){const e=S.event;if(!e)return;const c=e.choices[i];applyImpact(c[1]);S.score+=i===0?180:i===1?90:10;S.res.tempo=clamp(S.res.tempo-2);log(e.icon+' '+e.title+': '+c[0]+' — '+c[2]);maybeChain(e,i);S.turn++;moveNPCs();if(S.res.reputação<18||S.res.tempo<8||S.res.recursos<8)return finish('A cidade entrou em colapso operacional.');if(S.turn>=10)return finish('Você atravessou o ciclo crítico e estabilizou a cidade.');S.event=pickEvent();render()}
+function selectTile(x,y){S.selected={x,y};if(Math.abs(x-S.player.x)+Math.abs(y-S.player.y)<=2)moveTo(x,y);else{log('🗺️ Setor selecionado: '+(regionAt(x,y)?.name||'zona urbana')+'. Mova-se por etapas para chegar até lá.');render()}}
+function moveTo(x,y){const dx=Math.sign(x-S.player.x),dy=Math.sign(y-S.player.y);S.player.x+=dx;S.player.y+=dy;S.res.tempo=clamp(S.res.tempo-2);const r=regionAt(S.player.x,S.player.y);log('🚙 Equipe avançou para '+(r?.name||'zona urbana')+'. Tempo -2.');moveNPCs();S.turn++;if(S.turn>=10)finish('A operação terminou com a cidade estabilizada.');else{S.event=pickEvent();render()}}
 function move(){moveTo(Math.min(9,S.player.x+1),S.player.y)}
-function scan(){
-  S.res.tempo=clamp(S.res.tempo-3);const r=regionAt(S.player.x,S.player.y);
-  log('🔎 Varredura em '+(r?.name||'zona urbana')+' revelou rotas e movimentos de NPCs. Tempo -3.');
-  if(S.npcs.some(n=>Math.abs(n.x-S.player.x)+Math.abs(n.y-S.player.y)<=2))log('👥 Um NPC está próximo e pode influenciar o próximo evento.');
-  render()
-}
+function scan(){const free=S.scannerReady;if(!free)S.res.tempo=clamp(S.res.tempo-3);else S.scannerReady=false;const r=regionAt(S.player.x,S.player.y);log('🔎 Varredura em '+(r?.name||'zona urbana')+' revelou rotas e movimentos de NPCs.'+(free?' Scanner Avançado usado: Tempo preservado.':' Tempo -3.'));if(S.npcs.some(n=>Math.abs(n.x-S.player.x)+Math.abs(n.y-S.player.y)<=2))log('👥 Um NPC está próximo e pode influenciar o próximo evento.');render()}
 function openEvent(){document.querySelector('.event')?.scrollIntoView({behavior:'smooth'})}
 function npcPanel(){return '<h3>👥 Pessoas em movimento</h3>'+S.npcs.map(n=>'<div class="npcRow"><span>'+n.icon+' <b>'+n.name.split(' · ')[0]+'</b><br><span class="small">'+n.name.split(' · ')[1]+' · '+(regionAt(n.x,n.y)?.name||'urbano')+'</span></span><span class="small">humor '+Math.round(n.mood)+'</span></div>').join('')}
 function missions(){return '<h3 style="margin-top:18px">🔗 Consequências</h3>'+(S.pending?'<div class="mission">Próximo encadeamento: <b>'+eventDefs.find(x=>x.id===S.pending.id).title+'</b><br><span class="small">previsto para o turno '+S.pending.turn+'</span></div>':'<div class="small">Nenhuma consequência agendada. Suas escolhas podem criar uma.</div>')}
-function playScreen(){
-  const e=S.event;
-  app.innerHTML='<div class="layout"><section class="panel">'+stats()+map()+'<div class="actions"><button class="btn" onclick="move()">🚙 Avançar equipe</button><button class="btn" onclick="scan()">🔎 Escanear setor</button><button class="btn" onclick="moveNPCs();log(\'👥 A cidade reagiu aos seus movimentos.\');render()">⏱️ Aguardar reação</button></div><div class="worldGrid"><div class="worldCard">'+npcPanel()+'</div><div class="worldCard">'+missions()+'</div></div></section><aside class="panel event"><span class="tag">'+e.region+'</span><h2>'+e.icon+' '+e.title+'</h2><p>'+e.text+'</p><p class="small">Turno '+S.turn+' · A cidade continua se movendo enquanto você decide.</p>'+e.choices.map((x,i)=>'<button class="choice" onclick="decide('+i+')"><b>'+x[0]+'</b><br><span class="small">'+Object.entries(x[1]).map(([k,v])=>labels[k]+': '+(v>0?'+':'')+v).join(' · ')+'</span></button>').join('')+'<h3 style="margin-top:24px">📡 Central de eventos</h3><div class="feed">'+(S.log.length?S.log.slice(-8).reverse().map(x=>'<div>'+x+'</div>').join(''):'<div class="small">Os eventos aparecerão aqui conforme a cidade reage.</div>')+'</div></aside></div>'
+function playScreen(){const e=S.event;app.innerHTML='<div class="layout"><section class="panel">'+stats()+map()+'<div class="actions"><button class="btn" onclick="move()">🚙 Avançar equipe</button><button class="btn" onclick="scan()">🔎 Escanear setor</button><button class="btn" onclick="moveNPCs();log(\'👥 A cidade reagiu aos seus movimentos.\');render()">⏱️ Aguardar reação</button><button class="btn" onclick="S.screen=\'shop\';render()">🛒 Loja</button></div><div class="worldGrid"><div class="worldCard">'+npcPanel()+'</div><div class="worldCard">'+missions()+'</div></div></section><aside class="panel event"><span class="tag">'+e.region+'</span><h2>'+e.icon+' '+e.title+'</h2><p>'+e.text+'</p><p class="small">Turno '+S.turn+' · A cidade continua se movendo enquanto você decide.</p>'+e.choices.map((x,i)=>'<button class="choice" onclick="decide('+i+')"><b>'+x[0]+'</b><br><span class="small">'+Object.entries(x[1]).map(([k,v])=>labels[k]+': '+(v>0?'+':'')+v).join(' · ')+'</span></button>').join('')+'<h3 style="margin-top:24px">📡 Central de eventos</h3><div class="feed">'+(S.log.length?S.log.slice(-8).reverse().map(x=>'<div>'+x+'</div>').join(''):'<div class="small">Os eventos aparecerão aqui conforme a cidade reage.</div>')+'</div></aside></div>'}
+function finish(msg){
+ const p=player();S.screen='end';const avg=Object.values(S.res).reduce((a,b)=>a+b,0)/5,win=avg>=55;const earnedScore=S.score,earnedXp=win?240:80,earnedCoins=win?80:20;
+ S.xp=p.xp+earnedXp;S.coins=p.coins+earnedCoins;S.score=p.score+earnedScore;p.xp=S.xp;p.coins=S.coins;p.score=S.score;p.lastScore=earnedScore;p.played=(p.played||0)+1;p.wins=(p.wins||0)+(win?1:0);saveDB();log('🏁 '+msg+' Recompensa: +'+earnedXp+' XP · +'+earnedCoins+' moedas · +'+earnedScore+' pontos.');render()
 }
-function finish(msg){S.screen='end';const avg=Object.values(S.res).reduce((a,b)=>a+b,0)/5,win=avg>=55;S.xp+=win?240:80;S.coins+=win?80:20;log('🏁 '+msg);render()}
 function endScreen(){
-  const avg=Math.round(Object.values(S.res).reduce((a,b)=>a+b,0)/5);
-  app.innerHTML='<div class="panel start"><span class="tag">RELATÓRIO FINAL · MUNDO VIVO</span><h2>'+(avg>=55?'Vitória operacional':'Resultado parcial')+'</h2><p>'+S.log.at(-1)+'</p>'+stats()+'<p>Você terminou com média de <b>'+avg+'</b>/100 e <b>'+S.score+'</b> pontos de decisão. NPCs foram deslocados e '+(S.pending?'havia uma consequência pendente.':'as cadeias críticas foram resolvidas.')+'</p><div class="feed">'+S.log.slice(-10).reverse().map(x=>'<div>'+x+'</div>').join('')+'</div><div class="actions" style="justify-content:center"><button class="btn primary" onclick="start()">↻ Nova operação</button><button class="btn" onclick="S.screen=\'start\';S.scenario=null;render()">← Escolher cenário</button></div></div>'
+ const avg=Math.round(Object.values(S.res).reduce((a,b)=>a+b,0)/5),p=player();
+ app.innerHTML='<div class="panel start"><span class="tag">RELATÓRIO FINAL · PERFIL SALVO</span><h2>'+(avg>=55?'Vitória operacional 🏆':'Resultado parcial')+'</h2><p>'+S.log.at(-1)+'</p>'+stats()+'<div class="wallet"><span>⭐ XP total: <b>'+p.xp+'</b></span><span>🪙 Moedas: <b>'+p.coins+'</b></span><span>🎯 Pontos acumulados: <b>'+p.score+'</b></span></div><p>Seu resultado foi incorporado à carreira. Use as moedas na loja e tente superar seu próprio recorde no ranking.</p><div class="feed">'+S.log.slice(-10).reverse().map(x=>'<div>'+x+'</div>').join('')+'</div><div class="actions" style="justify-content:center"><button class="btn primary" onclick="S.screen=\'lobby\';S.scenario=null;render()">🏠 Central do jogador</button><button class="btn" onclick="S.screen=\'shop\';render()">🛒 Abrir loja</button><button class="btn" onclick="S.scenario=null;start()">↻ Nova operação</button></div></div>'
 }
+
+if(currentEmail&&db[currentEmail]){S.xp=db[currentEmail].xp;S.coins=db[currentEmail].coins;S.score=db[currentEmail].score;S.screen='lobby'}else{S.screen='auth'}
 render();
