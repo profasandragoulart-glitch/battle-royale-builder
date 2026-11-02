@@ -139,6 +139,9 @@ export class Game {
   private zc: { x: number; y: number };
   private keys = new Set<string>();
   private mouse = { x: 0, y: 0, down: false };
+  /** Touch input, driven by on-screen joysticks. */
+  touch = { active: false, move: { x: 0, y: 0 }, aim: null as { x: number; y: number } | null, fire: false };
+  reload() { this.startReload(this.me); }
   private raf = 0;
   private last = 0;
   private sendAcc = 0;
@@ -424,11 +427,20 @@ export class Game {
       if (this.keys.has("s") || this.keys.has("arrowdown")) my += 1;
       if (this.keys.has("a") || this.keys.has("arrowleft")) mx -= 1;
       if (this.keys.has("d") || this.keys.has("arrowright")) mx += 1;
+      const tm = this.touch.move;
+      if (tm.x || tm.y) { mx = tm.x; my = tm.y; }
       const l = Math.hypot(mx, my);
-      if (l) { me.x += (mx / l) * SPEED * dt; me.y += (my / l) * SPEED * dt; }
+      const sp = Math.min(1, l);
+      if (l) { me.x += (mx / l) * SPEED * sp * dt; me.y += (my / l) * SPEED * sp * dt; }
       this.resolve(me);
-      me.a = Math.atan2(this.mouse.y + cam.y - me.y, this.mouse.x + cam.x - me.x);
-      if (this.mouse.down) this.fire(me);
+      if (this.touch.active) {
+        if (this.touch.aim) me.a = Math.atan2(this.touch.aim.y, this.touch.aim.x);
+        else if (l) me.a = Math.atan2(my, mx);
+        if (this.touch.fire) this.fire(me);
+      } else {
+        me.a = Math.atan2(this.mouse.y + cam.y - me.y, this.mouse.x + cam.x - me.x);
+        if (this.mouse.down) this.fire(me);
+      }
     }
 
     this.players.forEach((p) => {
