@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Game, type Hud } from "@/game/engine";
 import { getMatch } from "@/lib/match-store";
 import { Button } from "@/components/ui/button";
+import { TouchControls } from "@/components/game/TouchControls";
 
 export const Route = createFileRoute("/_authenticated/play/$matchId")({
   head: () => ({ meta: [{ title: "Partida — Zona Zero" }, { name: "description", content: "Partida em andamento." }] }),
@@ -17,6 +18,9 @@ function Play() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const gameRef = useRef<Game | null>(null);
+  const [isTouch, setIsTouch] = useState(false);
+  useEffect(() => { setIsTouch(window.matchMedia("(pointer: coarse)").matches || navigator.maxTouchPoints > 0); }, []);
   const [hud, setHud] = useState<Hud | null>(null);
   const [result, setResult] = useState<{ kills: number; won: boolean; placement: number } | null>(null);
 
@@ -36,7 +40,8 @@ function Play() {
       qc.invalidateQueries({ queryKey: ["profile", user.id] });
       qc.invalidateQueries({ queryKey: ["leaderboard"] });
     });
-    return () => { game?.destroy(); supabase.removeChannel(ch); };
+    gameRef.current = game;
+    return () => { gameRef.current = null; game?.destroy(); supabase.removeChannel(ch); };
   }, [matchId, user.id, navigate, qc]);
 
   return (
@@ -45,8 +50,8 @@ function Play() {
 
       {hud && (
         <>
-          <div className="pointer-events-none absolute left-4 top-4 space-y-2">
-            <div className="rounded-md bg-card/80 px-4 py-2 font-display text-2xl tracking-wide">
+          <div className="pointer-events-none absolute left-2 top-2 space-y-2 sm:left-4 sm:top-4">
+            <div className="rounded-md bg-card/80 px-3 py-1 font-display text-lg tracking-wide sm:px-4 sm:py-2 sm:text-2xl">
               Vivos <span className="text-primary">{hud.alive}</span> · Abates <span className="text-primary">{hud.kills}</span>
             </div>
             <div className={`rounded-md px-4 py-2 text-sm font-semibold ${hud.outside ? "bg-destructive text-destructive-foreground" : "bg-card/80"}`}>
@@ -57,8 +62,8 @@ function Play() {
             </ul>
           </div>
 
-          <div className="pointer-events-none absolute bottom-6 left-1/2 flex -translate-x-1/2 items-end gap-6">
-            <div className="w-72">
+          <div className="pointer-events-none absolute bottom-6 left-1/2 flex -translate-x-1/2 items-end gap-3 sm:gap-6">
+            <div className="w-40 sm:w-72">
               <div className="mb-1 flex justify-between font-display text-lg tracking-wide"><span>Vida</span><span>{hud.hp}</span></div>
               <div className="h-3 overflow-hidden rounded bg-card/80">
                 <div className="h-full bg-fire transition-all" style={{ width: `${hud.hp}%` }} />
@@ -68,6 +73,8 @@ function Play() {
               {hud.reloading ? <span className="text-muted-foreground">Recarregando</span> : <>{hud.ammo}<span className="text-lg text-muted-foreground">/30</span></>}
             </div>
           </div>
+
+          {isTouch && hud.alive > 0 && !result && <TouchControls game={gameRef} />}
 
           {hud.countdown > 0 && (
             <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
