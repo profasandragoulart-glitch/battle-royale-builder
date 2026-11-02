@@ -46,7 +46,7 @@ function Play() {
 
   return (
     <div className="fixed inset-0 select-none overflow-hidden bg-background">
-      <canvas ref={canvasRef} className="h-full w-full cursor-none" onContextMenu={(e) => e.preventDefault()} />
+      <canvas ref={canvasRef} className="h-full w-full cursor-none touch-none" onContextMenu={(e) => e.preventDefault()} />
 
       {hud && (
         <>
